@@ -1,4 +1,4 @@
-from models import *
+from models_sphere import *
 import torch
 import torch.optim as optim
 import numpy as np
@@ -9,12 +9,8 @@ from utils import L2discrepancy, hickernell_all_emphasized
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 def train(args):
-    data = torch.rand(args.nsamples * args.nbatch, args.dim).to(device)
-    batch = torch.arange(args.nbatch).unsqueeze(-1).to(device)
-    batch = batch.repeat(1, args.nsamples).flatten()
-    edge_index = radius_graph(data, r=args.radius, loop=True, batch=batch).to(device)
-    model = MPMC_net(args.dim, args.nhid, args.nlayers, args.nsamples, args.nbatch,
-                     args.radius, args.loss_fn, args.dim_emphasize, args.n_projections).to(device)
+    model = MPMC_net(args.nhid, args.nlayers, args.nsamples, args.nbatch,
+                     args.radius).to(device)
     optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     best_loss = 10000.
     patience = 0
@@ -29,7 +25,7 @@ def train(args):
     for epoch in range(args.epochs):
         model.train()
         optimizer.zero_grad()
-        loss, X = model(data, edge_index, batch)
+        loss, X = model()
         loss.backward()
         optimizer.step()
 
@@ -54,6 +50,8 @@ def train(args):
                 PATH = 'outputs/dim_'+str(args.dim)+'/nsamples_'+str(args.nsamples)+'.npy'
                 y = y.detach().cpu().numpy()
                 np.save(PATH,y)
+
+                torch.save(model.state_dict(), "model_state.pth")
 
             if (min_discrepancy > best_loss and (epoch + 1) >= start_reduce):
                 patience += 1
@@ -81,13 +79,13 @@ if __name__ == '__main__':
                         help='weight_decay')
     parser.add_argument('--nhid', type=int, default=128,
                         help='number of hidden features of GNN')
-    parser.add_argument('--nbatch', type=int, default=32,
+    parser.add_argument('--nbatch', type=int, default=16,
                         help='number of point sets in batch')
     parser.add_argument('--epochs', type=int, default=200000,
                         help='number of epochs')
     parser.add_argument('--start_reduce', type=int, default=100000,
                         help='when to start lr decay')
-    parser.add_argument('--radius', type=float, default=0.2,
+    parser.add_argument('--radius', type=float, default=0.35,
                         help='radius for nearest neighbor GNN graph')
     parser.add_argument('--nsamples', type=int, default=64,
                         help='number of samples')

@@ -1,7 +1,6 @@
 import torch
 import math
 from torch import nn
-from torch_cluster import radius_graph
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 from torch_geometric.nn import MessagePassing, InstanceNorm
 
@@ -57,13 +56,6 @@ class MPMC_net(nn.Module):
         self.n_projections = n_projections
         self.dim_emphasize = torch.tensor(dim_emphasize).long()
 
-        ## random input points for transformation:
-        self.x = torch.rand(nsamples * nbatch, dim).to(device)
-        batch = torch.arange(nbatch).unsqueeze(-1).to(device)
-        batch = batch.repeat(1, nsamples).flatten()
-        self.batch = batch
-        self.edge_index = radius_graph(self.x, r=radius, loop=True, batch=batch).to(device)
-
         if loss_fn == 'L2':
             self.loss_fn = self.L2discrepancy
         elif loss_fn == 'approx_hickernell':
@@ -106,13 +98,10 @@ class MPMC_net(nn.Module):
         out = torch.sqrt(math.pow(3., -dim) - one_dive_N * math.pow(2., 1. - dim) * sum1 + 1. / math.pow(N, 2.) * sum2)
         return out
 
-    def forward(self):
-        X = self.x
-        edge_index = self.edge_index
-
+    def forward(self, X, edge_index, batch):
         X = self.enc(X)
         for i in range(self.nlayers):
-            X = self.convs[i](X,edge_index,self.batch)
+            X = self.convs[i](X,edge_index,batch)
         X = torch.sigmoid(self.dec(X))  ## clamping with sigmoid needed so that warnock's formula is well-defined
         X = X.view(self.nbatch, self.nsamples, self.dim)
         loss = torch.mean(self.loss_fn(X))
