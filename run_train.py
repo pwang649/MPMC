@@ -1,3 +1,5 @@
+from torch_cluster import radius_graph
+
 from models import *
 import torch
 import torch.optim as optim
@@ -55,6 +57,8 @@ def train(args):
                 y = y.detach().cpu().numpy()
                 np.save(PATH,y)
 
+                torch.save(model.state_dict(), 'model_state.pth')
+
             if (min_discrepancy > best_loss and (epoch + 1) >= start_reduce):
                 patience += 1
 
@@ -83,7 +87,7 @@ if __name__ == '__main__':
                         help='number of hidden features of GNN')
     parser.add_argument('--nbatch', type=int, default=32,
                         help='number of point sets in batch')
-    parser.add_argument('--epochs', type=int, default=200000,
+    parser.add_argument('--epochs', type=int, default=20000,
                         help='number of epochs')
     parser.add_argument('--start_reduce', type=int, default=100000,
                         help='when to start lr decay')
