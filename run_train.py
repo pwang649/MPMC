@@ -1,13 +1,11 @@
-from torch_cluster import radius_graph
-
-from models import *
 import torch
 import torch.optim as optim
 import numpy as np
 from pathlib import Path
 import argparse
 from utils import L2discrepancy, hickernell_all_emphasized
-
+from models import *
+from torch_cluster import radius_graph
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 def train(args):
@@ -110,4 +108,5 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
     train(args)
+
 
