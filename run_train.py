@@ -6,6 +6,8 @@ import argparse
 from utils import L2discrepancy, hickernell_all_emphasized
 from models import *
 from torch_cluster import radius_graph
+from MLAP import MLAP_GIN, MLAP_Sum, MLAP_Weighted
+
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 def train(args):
