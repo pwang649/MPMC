@@ -6,74 +6,96 @@ import torch.optim as optim
 import numpy as np
 from pathlib import Path
 import argparse
+
+from models_GAT import GAT_net
+from models_GCN import GCN_net
 from utils import L2discrepancy, hickernell_all_emphasized
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
+import wandb  # Import W&B for logging
+
 def train(args):
+    wandb.init(project="gcn_vs_mpnn_vs_gat", config=args.__dict__)
+
     data = torch.rand(args.nsamples * args.nbatch, args.dim).to(device)
     batch = torch.arange(args.nbatch).unsqueeze(-1).to(device)
     batch = batch.repeat(1, args.nsamples).flatten()
     edge_index = radius_graph(data, r=args.radius, loop=True, batch=batch).to(device)
-    model = MPMC_net(args.dim, args.nhid, args.nlayers, args.nsamples, args.nbatch,
-                     args.radius, args.loss_fn, args.dim_emphasize, args.n_projections).to(device)
-    optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
-    best_loss = 10000.
-    patience = 0
 
-    ## could be tuned for better performance
-    start_reduce = 100000
-    reduce_point = 10
+    data_test = torch.rand(args.nsamples * args.nbatch, args.dim).to(device)
+    batch_test = torch.arange(args.nbatch).unsqueeze(-1).to(device)
+    batch_test = batch_test.repeat(1, args.nsamples).flatten()
+    edge_index_test = radius_graph(data_test, r=args.radius, loop=True, batch=batch_test).to(device)
 
-    Path('results/dim_' + str(args.dim)).mkdir(parents=True, exist_ok=True)
-    Path('outputs/dim_' + str(args.dim)).mkdir(parents=True, exist_ok=True)
+    # Initialize models
+    models = {
+        "MPNN": MPMC_net(args.dim, args.nhid, args.nlayers, args.nsamples, args.nbatch,
+                         args.radius, args.loss_fn, args.dim_emphasize, args.n_projections).to(device),
+        "GCN": GCN_net(args.dim, args.nhid, args.nlayers, args.nsamples, args.nbatch,
+                       args.radius, args.loss_fn, args.dim_emphasize, args.n_projections).to(device),
+        "GAT": GAT_net(args.dim, args.nhid, args.nlayers, args.nsamples, args.nbatch,
+                       args.radius, args.loss_fn, args.dim_emphasize, args.n_projections).to(device),
+    }
+
+    optimizers = {
+        model_name: optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+        for model_name, model in models.items()
+    }
+
+    best_loss = {model_name: float('inf') for model_name in models}
+    patience = {model_name: 0 for model_name in models}
+
+    Path('results').mkdir(parents=True, exist_ok=True)
+    Path('outputs').mkdir(parents=True, exist_ok=True)
 
     for epoch in range(args.epochs):
-        model.train()
-        optimizer.zero_grad()
-        loss, X = model(data, edge_index, batch)
-        loss.backward()
-        optimizer.step()
+        for model_name, model in models.items():
+            model.train()
+            optimizers[model_name].zero_grad()
+            loss, X = model(data, edge_index, batch)
+            loss.backward()
+            optimizers[model_name].step()
 
-        if epoch % 100 ==0:
-            y = X.clone()
-            if args.loss_fn == 'L2':
-                batched_discrepancies = L2discrepancy(y.detach())
-            elif args.loss_fn == 'approx_hickernell':
-                ## compute sum over all projections with emphasized dimensionality:
-                batched_discrepancies = hickernell_all_emphasized(y.detach(),args.dim_emphasize)
-            else:
-                print('Loss function not implemented')
-            min_discrepancy, mean_discrepancy = torch.min(batched_discrepancies).item(), torch.mean(batched_discrepancies).item
+            if epoch % 100 == 0:
+                model.eval()
+                with torch.no_grad():
+                    loss_test, X_test = model(data_test, edge_index_test, batch_test)
+                    if args.loss_fn == 'L2':
+                        batched_discrepancies = L2discrepancy(X_test.detach())
+                    elif args.loss_fn == 'approx_hickernell':
+                        batched_discrepancies = hickernell_all_emphasized(X_test.detach(), args.dim_emphasize)
+                    else:
+                        raise ValueError("Loss function not implemented")
 
-            if min_discrepancy < best_loss:
-                best_loss = min_discrepancy
-                f = open('results/dim_'+str(args.dim)+'/nsamples_'+str(args.nsamples)+'.txt', 'a')
-                f.write(str(best_loss) + '\n')
-                f.close()
+                    min_discrepancy = torch.min(batched_discrepancies).item()
+                    mean_discrepancy = torch.mean(batched_discrepancies).item()
 
-                ## save MPMC points:
-                PATH = 'outputs/dim_'+str(args.dim)+'/nsamples_'+str(args.nsamples)+'.npy'
-                y = y.detach().cpu().numpy()
-                np.save(PATH,y)
+                    wandb.log({
+                        f"{model_name}_train_loss": loss.item(),
+                        f"{model_name}_test_loss": loss_test.item(),
+                        f"{model_name}_min_discrepancy": min_discrepancy,
+                        f"{model_name}_mean_discrepancy": mean_discrepancy,
+                        "epoch": epoch,
+                    })
 
-                torch.save(model.state_dict(), 'model_state.pth')
+                    if min_discrepancy < best_loss[model_name]:
+                        best_loss[model_name] = min_discrepancy
+                        torch.save(model.state_dict(), f'outputs/{model_name}_best_model.pth')
+                        np.save(f'outputs/{model_name}_best_points.npy', X_test.cpu().numpy())
 
-            if (min_discrepancy > best_loss and (epoch + 1) >= start_reduce):
-                patience += 1
+                    if min_discrepancy > best_loss[model_name] and (epoch + 1) >= args.start_reduce:
+                        patience[model_name] += 1
 
-            if (epoch + 1) >= start_reduce and patience == reduce_point:
-                patience = 0
-                args.lr /= 10.
-                for param_group in optimizer.param_groups:
-                    param_group['lr'] = args.lr
+                    if (epoch + 1) >= args.start_reduce and patience[model_name] >= args.reduce_point:
+                        patience[model_name] = 0
+                        args.lr /= 10.0
+                        for param_group in optimizers[model_name].param_groups:
+                            param_group['lr'] = args.lr
 
-            if (args.lr < 1e-6):
-                f = open('results/dim_'+str(args.dim)+'/nsamples_'+str(args.nsamples)+'.txt', 'a')
-                f.write('### epochs: '+str(epoch) + '\n')
-                f.close()
-                break
-            
+                        if args.lr < 1e-6:
+                            print(f"Early stopping {model_name} at epoch {epoch}.")
+                            break
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='training parameters')
@@ -85,7 +107,7 @@ if __name__ == '__main__':
                         help='weight_decay')
     parser.add_argument('--nhid', type=int, default=128,
                         help='number of hidden features of GNN')
-    parser.add_argument('--nbatch', type=int, default=32,
+    parser.add_argument('--nbatch', type=int, default=128,
                         help='number of point sets in batch')
     parser.add_argument('--epochs', type=int, default=20000,
                         help='number of epochs')
