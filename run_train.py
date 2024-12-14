@@ -1,10 +1,9 @@
+from matplotlib import pyplot as plt
 from torch_cluster import radius_graph
 
 from models import *
 import torch
 import torch.optim as optim
-import numpy as np
-from pathlib import Path
 import argparse
 
 from models_GAT import GAT_net
@@ -13,11 +12,8 @@ from utils import L2discrepancy, hickernell_all_emphasized
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-import wandb  # Import W&B for logging
-
 def train(args):
-    wandb.init(project="gcn_vs_mpnn_vs_gat", config=args.__dict__)
-
+    # Data preparation
     data = torch.rand(args.nsamples * args.nbatch, args.dim).to(device)
     batch = torch.arange(args.nbatch).unsqueeze(-1).to(device)
     batch = batch.repeat(1, args.nsamples).flatten()
@@ -43,11 +39,9 @@ def train(args):
         for model_name, model in models.items()
     }
 
-    best_loss = {model_name: float('inf') for model_name in models}
-    patience = {model_name: 0 for model_name in models}
-
-    Path('results').mkdir(parents=True, exist_ok=True)
-    Path('outputs').mkdir(parents=True, exist_ok=True)
+    # Tracking results
+    mean_discrepancy_logs = {model_name: [] for model_name in models}
+    std_discrepancy_logs = {model_name: [] for model_name in models}
 
     for epoch in range(args.epochs):
         for model_name, model in models.items():
@@ -57,7 +51,8 @@ def train(args):
             loss.backward()
             optimizers[model_name].step()
 
-            if epoch % 100 == 0:
+            # Evaluate every 10 epochs
+            if epoch % 10 == 0:
                 model.eval()
                 with torch.no_grad():
                     loss_test, X_test = model(data_test, edge_index_test, batch_test)
@@ -68,34 +63,43 @@ def train(args):
                     else:
                         raise ValueError("Loss function not implemented")
 
-                    min_discrepancy = torch.min(batched_discrepancies).item()
                     mean_discrepancy = torch.mean(batched_discrepancies).item()
+                    std_discrepancy = torch.std(batched_discrepancies).item()
 
-                    wandb.log({
-                        f"{model_name}_train_loss": loss.item(),
-                        f"{model_name}_test_loss": loss_test.item(),
-                        f"{model_name}_min_discrepancy": min_discrepancy,
-                        f"{model_name}_mean_discrepancy": mean_discrepancy,
-                        "epoch": epoch,
-                    })
+                    mean_discrepancy_logs[model_name].append(mean_discrepancy)
+                    std_discrepancy_logs[model_name].append(std_discrepancy)
 
-                    if min_discrepancy < best_loss[model_name]:
-                        best_loss[model_name] = min_discrepancy
-                        torch.save(model.state_dict(), f'outputs/{model_name}_best_model.pth')
-                        np.save(f'outputs/{model_name}_best_points.npy', X_test.cpu().numpy())
+                    print(f"Epoch {epoch}, Model {model_name}, Mean Discrepancy: {mean_discrepancy}, Std: {std_discrepancy}")
 
-                    if min_discrepancy > best_loss[model_name] and (epoch + 1) >= args.start_reduce:
-                        patience[model_name] += 1
+    # Plot results
+    plt.figure(figsize=(10, 6))
+    for model_name in models:
+        epochs_range = range(0, args.epochs, 10)
+        mean_logs = mean_discrepancy_logs[model_name]
+        std_logs = std_discrepancy_logs[model_name]
+        plt.plot(epochs_range, mean_logs, label=f"{model_name} Mean")
+        plt.fill_between(epochs_range,
+                         [m - s for m, s in zip(mean_logs, std_logs)],
+                         [m + s for m, s in zip(mean_logs, std_logs)],
+                         alpha=0.2, label=f"{model_name} Std")
 
-                    if (epoch + 1) >= args.start_reduce and patience[model_name] >= args.reduce_point:
-                        patience[model_name] = 0
-                        args.lr /= 10.0
-                        for param_group in optimizers[model_name].param_groups:
-                            param_group['lr'] = args.lr
+    plt.xlabel("Epochs")
+    plt.ylabel("Discrepancy (Mean ± Std)")
+    plt.title("Mean and Std of Discrepancy vs. Epochs for MPNN, GCN, and GAT")
+    plt.legend()
+    plt.grid()
+    plt.show()
 
-                        if args.lr < 1e-6:
-                            print(f"Early stopping {model_name} at epoch {epoch}.")
-                            break
+    # Plot results
+    plt.figure(figsize=(10, 6))
+    for model_name, logs in mean_discrepancy_logs.items():
+        plt.plot(range(0, args.epochs, 10), logs, label=model_name)
+    plt.xlabel("Epochs")
+    plt.ylabel("Mean Discrepancy")
+    plt.title("Mean Discrepancy vs. Epochs for MPNN, GCN, and GAT")
+    plt.legend()
+    plt.grid()
+    plt.show()
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='training parameters')
@@ -109,9 +113,9 @@ if __name__ == '__main__':
                         help='number of hidden features of GNN')
     parser.add_argument('--nbatch', type=int, default=128,
                         help='number of point sets in batch')
-    parser.add_argument('--epochs', type=int, default=20000,
+    parser.add_argument('--epochs', type=int, default=500,
                         help='number of epochs')
-    parser.add_argument('--start_reduce', type=int, default=100000,
+    parser.add_argument('--start_reduce', type=int, default=1000,
                         help='when to start lr decay')
     parser.add_argument('--radius', type=float, default=0.2,
                         help='radius for nearest neighbor GNN graph')

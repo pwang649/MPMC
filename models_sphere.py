@@ -4,10 +4,38 @@ from torch import nn
 from torch_cluster import radius_graph
 from torch_geometric.nn import MessagePassing, InstanceNorm
 
-from test_and_visualize import fibonacci_sphere_samples
-
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
+def fibonacci_sphere_samples(N, device='cpu'):
+    """
+    Generate N points approximately uniformly distributed on the unit sphere using the Fibonacci method.
+
+    Args:
+        N (int): Number of points.
+        device (str): 'cpu' or 'cuda' device.
+
+    Returns:
+        Tensor of shape [N,3], where each row is (x,y,z) on the unit sphere.
+    """
+    indices = torch.arange(N, device=device, dtype=torch.float32)
+    phi = math.pi * (3. - math.sqrt(5.))  # golden angle ~ 2.399963...
+
+    # y goes from +1 to -1 (top to bottom of the sphere)
+    y = 1.0 - 2.0 * indices / (N - 1)
+    radius = torch.sqrt(1.0 - y * y)
+
+    theta = phi * indices
+
+    x = radius * torch.cos(theta)
+    z = radius * torch.sin(theta)
+
+    # Stack to [N,3]
+    xyz = torch.stack([x, y, z], dim=-1)
+    # Normalization not strictly needed, they are already on the unit sphere
+    # but we do it for numerical consistency:
+    xyz = xyz / xyz.norm(dim=1, keepdim=True)
+
+    return xyz
 
 # Helper to sample uniformly on a sphere (2-sphere in 3D).
 # This uses the fact that sampling a 3D Gaussian and normalizing gives uniform direction.
@@ -17,8 +45,6 @@ def sample_sphere(n):
     # Normalize each row to have unit length
     xyz = xyz / xyz.norm(dim=1, keepdim=True)
     return xyz
-
-
 
 class MPNN_layer(MessagePassing):
     def __init__(self, ninp, nhid):

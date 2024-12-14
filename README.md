@@ -1,12 +1,15 @@
 # Message-Passing Monte Carlo
-This repository contains the official implementation of the **MPMC** method 
-from the PNAS paper:
-[Message-Passing Monte Carlo: Generating low-discrepancy point sets via Graph Neural Networks](https://arxiv.org/abs/2405.15059)
 
 <p align="center">
 <img align="middle" src="./imgs/MPMC_model.png" width="600" />
 </p>
-
+<p align="center">
+<img align="middle" src="./imgs/2D.png" width="600" />
+</p>
+<p align="center">
+<img align="middle" src="./imgs/sphere_baseline.png" width="600" />
+<img align="middle" src="./imgs/sphere.png" width="600" />
+</p>
 ### Requirements
 Main dependencies (with python >= 3.7):<br />
 torch==1.9.0<br />
@@ -58,43 +61,3 @@ while still training with L2-discrepancy.
 * **fine-tuning:** For optimal results, we encourage fine-tuning the 
 hyperparameters in the `run_train.py` file.
 
-# Open problems
-We outline several key open problems with the hope of inspiring the community to 
-build upon and enhance our current approach:
-* **Scalability for larger point sets:** As the number of points 
-increases, performance degrades. A significant challenge is to 
-scale MPMC effectively for point sets 
-with orders of magnitude such as 10^5 points or more. 
-Achieving this will likely require enhancing the current 
-message-passing graph neural network (GNN) architecture.
-* **Training for fixed number of points and dimension:** At present, 
-MPMC must be retrained from scratch for each fixed number of points 
-and dimensions. It would be highly beneficial if this limitation 
-could be addressed. One potential direction is to exploit the 
-generalization capabilities of GNNs in inductive graph learning 
-tasks, which could at least alleviate the need for retraining when 
-the number of points changes.
-* **Randomization:**  Scrambling methods applied to Sobol 
-and Halton sequences yield strong results, providing unbiased 
-estimates. However, it remains unclear how to effectively 
-randomize MPMC beyond simple random shifts. 
-Further exploration in this area could yield valuable improvements.
-* **Further open questions:** If you detect any other limitation that could be interesting
-to add here, please reach out to me or open an issue,
-and I will be happy to add it to this list.
-
-# Citation
-If you found our work useful in your research, please cite our paper at:
-```bibtex
-@article{rusch2024message,
-  title={Message-Passing Monte Carlo: Generating low-discrepancy point sets via graph neural networks},
-  author={Rusch, T Konstantin and Kirk, Nathan and Bronstein, Michael M and Lemieux, Christiane and Rus, Daniela},
-  journal={Proceedings of the National Academy of Sciences},
-  volume={121},
-  number={40},
-  pages={e2409913121},
-  year={2024},
-  publisher={National Academy of Sciences}
-}
-```
-(Also consider starring the project on GitHub.)
