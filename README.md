@@ -10,7 +10,9 @@
 <img align="middle" src="./imgs/sphere_baseline.png" width="600" />
 <img align="middle" src="./imgs/sphere.png" width="600" />
 </p>
+
 ### Requirements
+
 Main dependencies (with python >= 3.7):<br />
 torch==1.9.0<br />
 torch-cluster==1.5.9<br />
