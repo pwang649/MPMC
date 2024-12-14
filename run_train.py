@@ -77,19 +77,19 @@ def train(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='training parameters')
-    parser.add_argument('--lr', type=float, default=0.001,
+    parser.add_argument('--lr', type=float, default=1e-3,
                         help='number of samples')
     parser.add_argument('--nlayers', type=int, default=3,
                         help='number of GNN nlayers')
     parser.add_argument('--weight_decay', type=float, default=1e-6,
                         help='weight_decay')
-    parser.add_argument('--nhid', type=int, default=128,
+    parser.add_argument('--nhid', type=int, default=64, # speed up training
                         help='number of hidden features of GNN')
     parser.add_argument('--nbatch', type=int, default=32,
                         help='number of point sets in batch')
     parser.add_argument('--epochs', type=int, default=20000,
                         help='number of epochs')
-    parser.add_argument('--start_reduce', type=int, default=100000,
+    parser.add_argument('--start_reduce', type=int, default=10000,
                         help='when to start lr decay')
     parser.add_argument('--radius', type=float, default=0.2,
                         help='radius for nearest neighbor GNN graph')
@@ -107,6 +107,8 @@ if __name__ == '__main__':
                              'dimensionalities.')
     parser.add_argument('--n_projections', type=int, default=15,
                         help='number of projections for approx_hickernell')
+    parser.add_argument('--dropout', type=int, default=0.2,
+                        help='dropout rate.')                       
 
     args = parser.parse_args()
     train(args)
